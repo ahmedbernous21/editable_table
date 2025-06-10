@@ -142,21 +142,19 @@
           startX: 0,
           startWidth: 0,
           apiItemCount: 10,
-          apiLoadedCount: 0, // Track the number of items loaded from the API
+          apiLoadedCount: 0, 
           selectedItems: [],
           sortKey: "",
           sortDirection: "asc",
         },
         methods: {
           loadFromApi() {
-            // Keep track of how many items we've already loaded to avoid duplicates
             const currentOffset = this.apiLoadedCount || 0;
             
             fetch(`https://jsonplaceholder.typicode.com/posts?_start=${currentOffset}&_limit=${this.apiItemCount}`)
               .then((res) => res.json())
               .then((data) => {
                 if (data.length === 0) {
-                  // If we've reached the end of available data, start over
                   this.apiLoadedCount = 0;
                   alert("All available data has been loaded. Starting over from the beginning.");
                   return this.loadFromApi();
@@ -192,7 +190,6 @@
                 
                 this.sortColumn('id', 'asc');
                 
-                // Update the offset for the next API call
                 this.apiLoadedCount = currentOffset + newItems.length;
               })
               .catch((error) => {
