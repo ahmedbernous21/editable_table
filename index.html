@@ -187,7 +187,10 @@
                   });
                 });
 
-                this.items.unshift(...newItems);
+
+                this.items.push(...newItems);
+                
+                this.sortColumn('id', 'asc');
                 
                 // Update the offset for the next API call
                 this.apiLoadedCount = currentOffset + newItems.length;
