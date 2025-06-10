@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Editable Table</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  </head>
+  <body>
+    <div id="app" class="container-fluid py-4" style="max-width: 1400px">
+      <!-- Control Panel -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3">
+          <!-- Primary Actions -->
+          <div class="row align-items-center mb-3">
+            <div class="col-lg-6">
+              <div class="d-flex align-items-center">
+                <button class="btn btn-primary btn-sm px-3 mr-3" @click="loadFromApi" style="border-radius: 6px">
+                  <i class="fas fa-download mr-2"></i>
+                  Load from API
+                </button>
+                <div class="d-flex align-items-center">
+                  <span class="text-muted small mr-2">Items:</span>
+                  <input type="number" v-model.number="apiItemCount" class="form-control form-control-sm" style="width: 70px; border-radius: 4px; border: 1px solid #e9ecef" min="1" max="100" placeholder="10" />
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="d-flex justify-content-lg-end">
+                <input type="file" @change="loadFromCSV" accept=".csv" class="d-none" id="csv-file-input" />
+                <label for="csv-file-input" class="btn btn-outline-secondary btn-sm px-3 mr-2 mb-0" style="border-radius: 6px; cursor: pointer">
+                  <i class="fas fa-upload mr-2"></i>
+                  Upload CSV
+                </label>
+                <button class="btn btn-outline-success btn-sm px-3" @click="exportToJson" style="border-radius: 6px">
+                  <i class="fas fa-file-export mr-2"></i>
+                  Export JSON
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Secondary Actions -->
+          <div class="row align-items-center" v-if="items.length > 0">
+            <div class="col-lg-6">
+              <button class="btn btn-outline-primary btn-sm px-3" @click="addRow" style="border-radius: 6px">
+                <i class="fas fa-plus mr-2"></i>
+                Add Row
+              </button>
+            </div>
+            <div class="col-lg-6">
+              <div class="d-flex justify-content-lg-end align-items-center">
+                <div class="text-muted small mr-3" v-if="selectedItems.length > 0">{{ selectedItems.length }} selected</div>
+                <button class="btn btn-outline-danger btn-sm px-3" @click="deleteSelected" :disabled="selectedItems.length === 0" style="border-radius: 6px" v-if="selectedItems.length > 0">
+                  <i class="fas fa-trash mr-2"></i>
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-if="items.length === 0" class="text-center py-5">
+        <div class="card border-0 shadow-sm">
+          <div class="card-body py-5">
+            <div class="mb-4">
+              <i class="fas fa-table text-muted" style="font-size: 4rem; opacity: 0.3"></i>
+            </div>
+            <h5 class="text-muted font-weight-light mb-3">No data to display</h5>
+            <p class="text-muted small mb-4" style="max-width: 300px; margin: 0 auto">Get started by loading data from our API, uploading a CSV file, or creating a new row.</p>
+            <div class="d-flex justify-content-center">
+              <button class="btn btn-primary btn-sm px-4 mr-2" @click="loadFromApi" style="border-radius: 6px">
+                <i class="fas fa-download mr-2"></i>
+                Load Sample Data
+              </button>
+              <button class="btn btn-outline-primary btn-sm px-4" @click="addRow" style="border-radius: 6px">
+                <i class="fas fa-plus mr-2"></i>
+                Add Row
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div v-else class="card border-0 shadow-sm">
+        <div class="table-responsive" style="border-radius: 8px; overflow: hidden">
+          <table class="table table-hover mb-0" ref="resizableTable">
+            <thead class="bg-white" style="border-bottom: 2px solid #f8f9fa">
+              <tr>
+                <th class="border-0 py-3 px-3" style="width: 50px; background-color: #fafbfc">
+                  <div class="custom-control custom-checkbox">
+                    <input type="checkbox" class="custom-control-input" id="selectAll" @change="toggleSelectAll" :checked="selectedItems.length === items.length && items.length > 0" :indeterminate.prop="selectedItems.length > 0 && selectedItems.length < items.length" />
+                    <label class="custom-control-label" for="selectAll"></label>
+                  </div>
+                </th>
+                <th v-for="(key, index) in headers" :key="key" class="border-0 py-3 px-3 position-relative user-select-none" style="min-width: 120px; background-color: #fafbfc">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-dark font-weight-medium small text-uppercase" style="letter-spacing: 0.5px">{{ key }}</span>
+                    <div class="d-flex flex-column ml-2">
+                      <button @click="sortColumn(key, 'asc')" class="btn p-0 border-0 bg-transparent" style="font-size: 10px; line-height: 1; outline: none; color: #6c757d" :style="{ color: sortKey === key && sortDirection === 'asc' ? '#007bff' : '#6c757d' }" title="Sort ascending">
+                        <i class="fas fa-caret-up"></i>
+                      </button>
+                      <button @click="sortColumn(key, 'desc')" class="btn p-0 border-0 bg-transparent" style="font-size: 10px; line-height: 1; outline: none; color: #6c757d; margin-top: -2px" :style="{ color: sortKey === key && sortDirection === 'desc' ? '#007bff' : '#6c757d' }" title="Sort descending">
+                        <i class="fas fa-caret-down"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div @mousedown="initResize($event, index + 1)" class="position-absolute" style="top: 0; right: 0; width: 5px; height: 100%; cursor: col-resize; background: transparent" @mouseover="$event.target.style.background = 'rgba(0,123,255,0.1)'" @mouseout="$event.target.style.background = 'transparent'"></div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, rowIndex) in items" :key="rowIndex" class="border-0" style="border-bottom: 1px solid #f8f9fa">
+                <td class="py-2 px-3 align-middle" style="background-color: #fafbfc">
+                  <div class="custom-control custom-checkbox">
+                    <input type="checkbox" class="custom-control-input" :id="`row-${rowIndex}`" :value="item" v-model="selectedItems" />
+                    <label class="custom-control-label" :for="`row-${rowIndex}`"></label>
+                  </div>
+                </td>
+                <td v-for="(value, key) in item" :key="key" class="p-0 align-middle">
+                  <input v-model="items[rowIndex][key]" class="form-control border-0 bg-transparent h-100 w-100" style="outline: none; box-shadow: none; min-height: 45px; padding: 12px 16px; transition: background-color 0.15s ease" @focus="$event.target.style.backgroundColor = '#f8f9fa'" @blur="$event.target.style.backgroundColor = 'transparent'" :placeholder="key" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      new Vue({
+        el: "#app",
+        data: {
+          items: [],
+          headers: [],
+          isResizing: false,
+          resizeColumn: null,
+          startX: 0,
+          startWidth: 0,
+          apiItemCount: 10,
+          apiLoadedCount: 0, // Track the number of items loaded from the API
+          selectedItems: [],
+          sortKey: "",
+          sortDirection: "asc",
+        },
+        methods: {
+          loadFromApi() {
+            // Keep track of how many items we've already loaded to avoid duplicates
+            const currentOffset = this.apiLoadedCount || 0;
+            
+            fetch(`https://jsonplaceholder.typicode.com/posts?_start=${currentOffset}&_limit=${this.apiItemCount}`)
+              .then((res) => res.json())
+              .then((data) => {
+                if (data.length === 0) {
+                  // If we've reached the end of available data, start over
+                  this.apiLoadedCount = 0;
+                  alert("All available data has been loaded. Starting over from the beginning.");
+                  return this.loadFromApi();
+                }
+                
+                const newItems = data;
+                const newHeaders = Object.keys(newItems[0] || {});
+
+                newHeaders.forEach((header) => {
+                  if (!this.headers.includes(header)) {
+                    this.headers.push(header);
+                  }
+                });
+
+                this.items.forEach((item) => {
+                  newHeaders.forEach((header) => {
+                    if (!(header in item)) {
+                      item[header] = null;
+                    }
+                  });
+                });
+
+                newItems.forEach((item) => {
+                  this.headers.forEach((header) => {
+                    if (!(header in item)) {
+                      item[header] = null;
+                    }
+                  });
+                });
+
+                this.items.unshift(...newItems);
+                
+                // Update the offset for the next API call
+                this.apiLoadedCount = currentOffset + newItems.length;
+              })
+              .catch((error) => {
+                console.error("Error loading data:", error);
+              });
+          },
+          loadFromCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+              header: false,
+              skipEmptyLines: true,
+              complete: (results) => {
+                try {
+                  if (results.data.length === 0) {
+                    alert("No valid data found in the CSV file.");
+                    return;
+                  }
+
+                  if (results.errors.length > 0) {
+                    console.warn("CSV parsing warnings:", results.errors);
+                  }
+
+                  const csvHeaders = results.data[0];
+                  const csvItems = results.data.slice(1).map((row) => {
+                    return csvHeaders.reduce((obj, header, index) => {
+                      obj[header] = row[index] || "";
+                      return obj;
+                    }, {});
+                  });
+
+                  csvHeaders.forEach((header) => {
+                    if (!this.headers.includes(header)) {
+                      this.headers.push(header);
+                    }
+                  });
+
+                  this.items.forEach((item) => {
+                    csvHeaders.forEach((header) => {
+                      if (!(header in item)) {
+                        item[header] = null;
+                      }
+                    });
+                  });
+
+                  csvItems.forEach((item) => {
+                    this.headers.forEach((header) => {
+                      if (!(header in item)) {
+                        item[header] = null;
+                      }
+                    });
+                  });
+
+                  this.items.unshift(...csvItems);
+                } catch (error) {
+                  alert("Error processing CSV file: " + error.message);
+                }
+              },
+              error: (error) => {
+                alert("Error parsing CSV file: " + error.message);
+              },
+            });
+          },
+          exportToJson() {
+            const json = JSON.stringify(this.items, null, 2);
+            const blob = new Blob([json], { type: "application/json" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "items.json";
+            link.click();
+          },
+          initResize(event, index) {
+            this.isResizing = true;
+            this.resizeColumn = index;
+            this.startX = event.clientX;
+
+            const th = event.target.parentElement;
+            this.startWidth = th.offsetWidth;
+
+            document.addEventListener("mousemove", this.resizeColumnWidth);
+            document.addEventListener("mouseup", this.stopResize);
+            event.preventDefault();
+          },
+          resizeColumnWidth(event) {
+            if (!this.isResizing) return;
+
+            const dx = event.clientX - this.startX;
+            const newWidth = Math.max(80, this.startWidth + dx);
+
+            const table = this.$refs.resizableTable;
+            const headers = table.querySelectorAll("th");
+            const cells = table.querySelectorAll("tbody tr");
+
+            headers[this.resizeColumn].style.width = `${newWidth}px`;
+
+            cells.forEach((row) => {
+              const cell = row.children[this.resizeColumn];
+              if (cell) {
+                cell.style.width = `${newWidth}px`;
+              }
+            });
+          },
+          stopResize() {
+            this.isResizing = false;
+            document.removeEventListener("mousemove", this.resizeColumnWidth);
+            document.removeEventListener("mouseup", this.stopResize);
+          },
+          addRow() {
+            if (this.headers.length === 0) {
+              this.headers = ["userId", "id", "title", "body"];
+            }
+
+            const newRow = this.headers.reduce((obj, header) => {
+              obj[header] = "";
+              return obj;
+            }, {});
+            this.items.unshift(newRow);
+          },
+          deleteSelected() {
+            this.items = this.items.filter((item) => !this.selectedItems.includes(item));
+            this.selectedItems = [];
+          },
+          toggleSelectAll(event) {
+            const checked = event.target.checked;
+            if (checked) {
+              this.selectedItems = [...this.items];
+            } else {
+              this.selectedItems = [];
+            }
+          },
+          sortColumn(key, direction) {
+            this.sortKey = key;
+            this.sortDirection = direction;
+
+            this.items.sort((a, b) => {
+              const aValue = a[key];
+              const bValue = b[key];
+
+              if (aValue === bValue) return 0;
+
+              if (aValue == null) return direction === "asc" ? 1 : -1;
+              if (bValue == null) return direction === "asc" ? -1 : 1;
+
+              return (aValue < bValue ? -1 : 1) * (direction === "asc" ? 1 : -1);
+            });
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
